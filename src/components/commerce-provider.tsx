@@ -10,7 +10,7 @@ import {
   type FulfilmentContext,
   type StorefrontBootstrap,
   type StorefrontLocation,
-} from "@tossdown/cart";
+} from "@zafeer/cart";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { DemoBootstrapResponse } from "@/lib/types";
 

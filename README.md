@@ -1,27 +1,20 @@
 # Tossdown third-party commerce demo
 
 This is a deliberately independent, one-page Next.js host application. It
-proves that a third-party website can supply its own UI while using only the
-local `@tossdown/cart` package for commerce behavior and
-`@tossdown/checkout-sdk` for Checkout MFE mounting.
+proves that a third-party website can supply its own UI while using the public
+`@zafeer/cart` package for commerce behavior and
+`@zafeer/checkout-sdk` for Checkout MFE mounting.
 
 ## Run locally
 
-1. Build the two local packages:
-
-   ```bash
-   cd /Volumes/Zafeer/packages/cart && npm run build
-   cd /Volumes/Zafeer/packages/checkout-sdk && npm run build
-   ```
-
-2. Start Checkout MFE on port 3001:
+1. Start Checkout MFE on port 3001:
 
    ```bash
    cd "/Volumes/Zafeer/Next Projects/nova-checkout"
    npm run dev -- -p 3001
    ```
 
-3. Copy `.env.example` to `.env.local`, install, and start this app:
+2. Copy `.env.example` to `.env.local`, install, and start this app:
 
    ```bash
    cd /Volumes/Zafeer/Test/demo
@@ -30,6 +23,21 @@ local `@tossdown/cart` package for commerce behavior and
    ```
 
 Open `http://localhost:3000`.
+
+## Deploy
+
+1. Deploy `nova-checkout` first. Set its `CHECKOUT_ALLOWED_ORIGINS` to the
+   deployed demo URL and note its deployment URL.
+2. In this project's deployment environment, set:
+
+   ```bash
+   NEXT_PUBLIC_CHECKOUT_MFE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/embed/index.global.js
+   NEXT_PUBLIC_CHECKOUT_API_BASE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/api/checkout
+   STOREFRONT_USERNAME=foodpapa1
+   ```
+
+3. Deploy this demo app. The published beta packages are installed from npm;
+   no local `file:` dependencies are required.
 
 ## Acceptance flow
 

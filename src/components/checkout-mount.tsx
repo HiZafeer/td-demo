@@ -1,6 +1,6 @@
 "use client";
 
-import { createCheckoutSdk, type CheckoutInstance } from "@tossdown/checkout-sdk";
+import { createCheckoutSdk, type CheckoutInstance } from "@zafeer/checkout-sdk";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCommerce } from "@/components/commerce-provider";
@@ -82,5 +82,5 @@ export function CheckoutMount() {
 
   if (!state?.cart?.items.length) return <section className="empty-checkout"><h1>Your cart is empty</h1><p>Add menu items before continuing to checkout.</p><Link className="button button-primary" href="/">Back to menu</Link></section>;
   if (!state.fulfilment) return <section className="empty-checkout"><h1>Fulfilment is required</h1><p>Return to the menu and select pickup or delivery before checkout.</p><Link className="button button-primary" href="/">Back to menu</Link></section>;
-  return <section className="checkout-shell"><div className="checkout-intro"><p className="eyebrow">Secure checkout</p><h1>Complete your order</h1><p>This content is mounted by <code>@tossdown/checkout-sdk</code>; the demo header and footer remain host-owned.</p></div>{completedOrder && <p className="notice success">Order confirmed: {completedOrder}. Local cart state has been cleared.</p>}{error ? <p className="notice error">{error}</p> : <div ref={targetRef} className="checkout-target" />}</section>;
+  return <section className="checkout-shell"><div className="checkout-intro"><p className="eyebrow">Secure checkout</p><h1>Complete your order</h1><p>This content is mounted by <code>@zafeer/checkout-sdk</code>; the demo header and footer remain host-owned.</p></div>{completedOrder && <p className="notice success">Order confirmed: {completedOrder}. Local cart state has been cleared.</p>}{error ? <p className="notice error">{error}</p> : <div ref={targetRef} className="checkout-target" />}</section>;
 }

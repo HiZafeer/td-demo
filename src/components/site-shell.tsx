@@ -19,7 +19,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
       </div>
     </header>
     <main>{children}</main>
-    <footer id="about" className="site-footer"><div><strong>{bootstrap.businessName || "Food Papa"}</strong><p>Third-party commerce integration demo.</p></div><p>Cart logic: <code>@tossdown/cart</code> · Checkout: <code>@tossdown/checkout-sdk</code></p></footer>
+    <footer id="about" className="site-footer"><div><strong>{bootstrap.businessName || "Food Papa"}</strong><p>Third-party commerce integration demo.</p></div><p>Cart logic: <code>@zafeer/cart</code> · Checkout: <code>@zafeer/checkout-sdk</code></p></footer>
     {cartOpen && <CartDrawer onClose={() => setCartOpen(false)} />}
   </>;
 }
