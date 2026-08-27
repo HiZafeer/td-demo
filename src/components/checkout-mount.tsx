@@ -21,7 +21,7 @@ export function CheckoutMount() {
         await client.flush();
         const checkoutContext = client.getCheckoutContext();
         const hostUrl = window.location.origin;
-        const sdk = createCheckoutSdk({ mfeUrl: process.env.NEXT_PUBLIC_CHECKOUT_MFE_URL || "http://localhost:3001/embed/index.global.js" });
+        const sdk = createCheckoutSdk({ mfeUrl: process.env.CHECKOUT_MFE_URL || "http://localhost:3001/embed/index.global.js" });
         instanceRef.current = await sdk.mount(targetRef.current!, {
           version: 1,
           source: "third-party-demo",
@@ -33,16 +33,16 @@ export function CheckoutMount() {
             deliveryZoneId: checkoutContext.fulfilment.deliveryZoneId ?? undefined,
             deliveryAddress: checkoutContext.fulfilment.deliveryAddress
               ? {
-                  label: checkoutContext.fulfilment.deliveryAddress.label,
-                  formattedAddress: checkoutContext.fulfilment.deliveryAddress.addressLine1 ?? checkoutContext.fulfilment.deliveryAddress.label,
-                  latitude: checkoutContext.fulfilment.deliveryAddress.latitude,
-                  longitude: checkoutContext.fulfilment.deliveryAddress.longitude,
-                }
+                label: checkoutContext.fulfilment.deliveryAddress.label,
+                formattedAddress: checkoutContext.fulfilment.deliveryAddress.addressLine1 ?? checkoutContext.fulfilment.deliveryAddress.label,
+                latitude: checkoutContext.fulfilment.deliveryAddress.latitude,
+                longitude: checkoutContext.fulfilment.deliveryAddress.longitude,
+              }
               : undefined,
             scheduleMode: checkoutContext.fulfilment.scheduledAt === "ASAP" ? "asap" : "scheduled",
             scheduledAt: checkoutContext.fulfilment.scheduledAt === "ASAP" ? undefined : checkoutContext.fulfilment.scheduledAt,
           },
-          apiBaseUrl: process.env.NEXT_PUBLIC_CHECKOUT_API_BASE_URL || "http://localhost:3001/api/checkout",
+          apiBaseUrl: process.env.CHECKOUT_API_BASE_URL || "http://localhost:3001/api/checkout",
           locale: "en-CA",
           currency: checkoutContext.currency,
           businessName: bootstrap.businessName,

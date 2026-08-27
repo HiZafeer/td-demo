@@ -31,8 +31,8 @@ Open `http://localhost:3000`.
 2. In this project's deployment environment, set:
 
    ```bash
-   NEXT_PUBLIC_CHECKOUT_MFE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/embed/index.global.js
-   NEXT_PUBLIC_CHECKOUT_API_BASE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/api/checkout
+   CHECKOUT_MFE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/embed/index.global.js
+   CHECKOUT_API_BASE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/api/checkout
    STOREFRONT_USERNAME=foodpapa1
    ```
 
