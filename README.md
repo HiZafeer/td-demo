@@ -31,13 +31,14 @@ Open `http://localhost:3000`.
 2. In this project's deployment environment, set:
 
    ```bash
-   CHECKOUT_MFE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/embed/index.global.js
-   CHECKOUT_API_BASE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/api/checkout
+   NEXT_PUBLIC_CHECKOUT_MFE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/embed/index.global.js
+   NEXT_PUBLIC_CHECKOUT_API_BASE_URL=https://YOUR-CHECKOUT-MFE-DOMAIN/api/checkout
    STOREFRONT_USERNAME=foodpapa1
    ```
 
-3. Deploy this demo app. The published beta packages are installed from npm;
-   no local `file:` dependencies are required.
+3. Redeploy this demo app after changing either `NEXT_PUBLIC_` value—Next.js
+   embeds browser-visible environment values at build time. The published beta
+   packages are installed from npm; no local `file:` dependencies are required.
 
 ## Acceptance flow
 
