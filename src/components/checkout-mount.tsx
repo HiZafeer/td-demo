@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCommerce } from "@/components/commerce-provider";
-import { OrderSuccessModal } from "@/components/order-success-modal";
 
 /** Mounts the canonical Nova checkout through Order SDK. The host owns only
   * the target element and context; the SDK loads the configured Checkout MFE
@@ -13,7 +12,6 @@ export function CheckoutMount() {
   const targetRef = useRef<HTMLElement>(null);
   const [mountState, setMountState] = useState<"waiting" | "mounting" | "ready" | "error">("waiting");
   const [mountError, setMountError] = useState<string | null>(null);
-  const [completedOrder, setCompletedOrder] = useState<{ orderId?: string; orderNumber?: string } | null>(null);
   const [retry, setRetry] = useState(0);
   const fulfilment = state.fulfilment;
   // Address, schedule, and cart edits are handled by the mounted MFE through
@@ -114,7 +112,6 @@ export function CheckoutMount() {
       onError: (error) => { if (active) { setMountState("error"); setMountError(error.message); recordSdk("mountCheckout", "error", error.message); } },
       onOrderComplete: (detail) => {
         if (active) {
-          setCompletedOrder({ orderId: detail.orderId, orderNumber: detail.orderNumber });
           recordSdk("orderComplete", "success", `Order accepted by the SDK · order=${detail.orderNumber || detail.orderId}`);
         }
       },
@@ -129,6 +126,5 @@ export function CheckoutMount() {
   return <>
     {mountError ? <div className="mfe-error"><strong>Checkout mount failed</strong><span>{mountError}</span><button className="button button-secondary" onClick={() => setRetry((value) => value + 1)}>Retry mount</button></div> : null}
     <section ref={targetRef} id="checkout-mfe-root" className="checkout-target" aria-label="Checkout MFE" aria-busy={mountState === "mounting"} />
-    {completedOrder ? <OrderSuccessModal orderNumber={completedOrder.orderNumber} onOrderAgain={() => { order?.clearLocalAfterOrder(); setCompletedOrder(null); window.location.assign("/#products"); }} /> : null}
   </>;
 }
