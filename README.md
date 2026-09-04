@@ -60,9 +60,7 @@ production bundle; the host does not recreate the mount or bridge logic.
 
 ## SDK package
 
-The demo uses the pinned `@ordrz/orders-sdk` package artifact in
-`vendor/ordrz-orders-sdk-0.1.0-beta.3.tgz`, so local testing exercises the
-same package boundary that production hosts will use. Once the SDK is
-published to the private registry, replace that `file:` dependency with the
-restricted registry version; the Demo integration code does not need to
-change.
+The demo uses the published `@ordrz/orders-sdk@0.1.0-beta.4` package from the
+npm registry. This version contains the canonical Checkout MFE default and
+loads `https://new-checkout-mu.vercel.app/embed/index.global.js` in production;
+local development still uses the localhost override described above.
