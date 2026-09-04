@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCommerce } from "@/components/commerce-provider";
+import { OrderSuccessModal } from "@/components/order-success-modal";
 
 /** Mounts the canonical Nova checkout through Order SDK. The host owns only
   * the target element and context; the SDK loads the configured Checkout MFE
@@ -12,6 +13,7 @@ export function CheckoutMount() {
   const targetRef = useRef<HTMLElement>(null);
   const [mountState, setMountState] = useState<"waiting" | "mounting" | "ready" | "error">("waiting");
   const [mountError, setMountError] = useState<string | null>(null);
+  const [completedOrder, setCompletedOrder] = useState<{ orderId?: string; orderNumber?: string } | null>(null);
   const [retry, setRetry] = useState(0);
   const fulfilment = state.fulfilment;
   // The SDK emits a fresh context object after every accepted update. Keep
@@ -110,6 +112,7 @@ export function CheckoutMount() {
       onError: (error) => { if (active) { setMountState("error"); setMountError(error.message); recordSdk("mountCheckout", "error", error.message); } },
       onOrderComplete: (detail) => {
         if (active) {
+          setCompletedOrder({ orderId: detail.orderId, orderNumber: detail.orderNumber });
           recordSdk("orderComplete", "success", `Order accepted by the SDK · order=${detail.orderNumber || detail.orderId}`);
         }
       },
@@ -121,5 +124,8 @@ export function CheckoutMount() {
   if (!state.cart.items.length) return <section className="checkout-shell"><div className="checkout-intro"><p className="eyebrow">Step 03 · checkout handoff</p><h1>Your checkout starts with a cart.</h1><p>Add an item from the menu to mount the canonical Checkout MFE through the Order SDK.</p></div><div className="checkout-empty"><span className="checkout-icon">⌑</span><h2>Your bag is empty</h2><p>Nothing is sent to the MFE until the SDK has a cart and valid fulfilment.</p><Link className="button button-primary" href="/#products">Back to menu</Link></div></section>;
   if (!fulfilment?.locationId || !fulfilment.orderType || !fulfilment.scheduledAt) return <section className="checkout-shell"><div className="checkout-intro"><p className="eyebrow">Step 03 · checkout handoff</p><h1>Choose fulfilment first.</h1><p>The Order SDK blocks checkout until location, fulfilment type, and timing are present.</p></div><div className="checkout-empty"><span className="checkout-icon">⌖</span><h2>Checkout is waiting for context</h2><p>Return to the menu and apply a pickup or delivery context.</p><Link className="button button-primary" href="/#products">Choose fulfilment</Link></div></section>;
 
-  return <section className="checkout-shell"><div className="checkout-intro checkout-intro-row"><div><p className="eyebrow">Step 03 · checkout handoff</p><h1>Canonical Checkout MFE</h1><p>Mounted by the Order SDK with Shadow DOM isolation. Cart state, fulfilment, validation, payment, and order placement stay inside the shared SDK runtime.</p></div><span className={`mfe-status ${mountState}`}><i />{mountState === "mounting" ? "Loading MFE" : mountState === "ready" ? "MFE ready" : mountState === "error" ? "Mount error" : "Waiting"}</span></div>{mountError ? <div className="mfe-error"><strong>Checkout mount failed</strong><span>{mountError}</span><button className="button button-secondary" onClick={() => setRetry((value) => value + 1)}>Retry mount</button></div> : null}<section ref={targetRef} id="checkout-mfe-root" className="checkout-target" aria-label="Checkout MFE" aria-busy={mountState === "mounting"} /></section>;
+  return <>
+    <section className="checkout-shell"><div className="checkout-intro checkout-intro-row"><div><p className="eyebrow">Step 03 · checkout handoff</p><h1>Canonical Checkout MFE</h1><p>Mounted by the Order SDK with Shadow DOM isolation. Cart state, fulfilment, validation, payment, and order placement stay inside the shared SDK runtime.</p></div><span className={`mfe-status ${mountState}`}><i />{mountState === "mounting" ? "Loading MFE" : mountState === "ready" ? "MFE ready" : mountState === "error" ? "Mount error" : "Waiting"}</span></div>{mountError ? <div className="mfe-error"><strong>Checkout mount failed</strong><span>{mountError}</span><button className="button button-secondary" onClick={() => setRetry((value) => value + 1)}>Retry mount</button></div> : null}<section ref={targetRef} id="checkout-mfe-root" className="checkout-target" aria-label="Checkout MFE" aria-busy={mountState === "mounting"} /></section>
+    {completedOrder ? <OrderSuccessModal orderNumber={completedOrder.orderNumber} onOrderAgain={() => { order?.clearLocalAfterOrder(); setCompletedOrder(null); window.location.assign("/#products"); }} /> : null}
+  </>;
 }

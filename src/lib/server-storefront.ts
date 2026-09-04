@@ -82,7 +82,7 @@ export async function loadDemoBootstrap(): Promise<DemoBootstrapResponse> {
   const googleMaps = isRecord(integrations.googleMaps) ? integrations.googleMaps : {};
   const googleMapsApiKey = googleMaps.enabled === true
     ? stringValue(googleMaps.browserApiKey)
-    : stringValue(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
+    : "";
   const businessId = stringValue(business.id, storefront.businessId, storefront.business_id);
   if (!businessId) throw new Error("The storefront response did not include a business ID.");
 
