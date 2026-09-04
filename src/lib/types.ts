@@ -14,6 +14,7 @@ export type DemoBootstrapResponse = {
   businessName: string;
   currency: string;
   logoUrl?: string;
+  maps?: { provider: "google" | "openstreetmap"; googleMapsApiKey?: string };
   locations: unknown[];
   products: DemoProduct[];
 };

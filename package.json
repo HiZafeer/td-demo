@@ -6,11 +6,10 @@
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit --incremental false"
   },
   "dependencies": {
-    "@zafeer/cart": "0.1.0-beta.1",
-    "@zafeer/checkout-sdk": "0.1.0-beta.1",
+    "@ordrz/orders-sdk": "file:vendor/ordrz-orders-sdk-0.1.0-beta.3.tgz",
     "next": "16.2.7",
     "react": "19.2.4",
     "react-dom": "19.2.4"

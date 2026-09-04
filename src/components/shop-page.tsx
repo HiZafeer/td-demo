@@ -1,109 +1,94 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { findEligibleDeliveryLocations, type CartLine, type FulfilmentContext, type OrderType } from "@zafeer/cart";
-import { useCommerce } from "@/components/commerce-provider";
+import { useEffect, useMemo, useState } from "react";
+import { useCommerce, type DemoOrderType } from "@/components/commerce-provider";
 import type { DemoProduct } from "@/lib/types";
+import { getStorefrontScheduledSlots } from "@ordrz/orders-sdk";
 
-type GeocodeResult = { label: string; latitude: number; longitude: number; city?: string; state?: string; country?: string; postalCode?: string };
-type DeliverySelection = GeocodeResult & { locationId: string; zoneId: string; locationName: string };
+function messageOf(error: unknown) { return error instanceof Error ? error.message : "The operation was rejected."; }
+type ScheduleDay = "today" | "tomorrow";
 
 export function ShopPage() {
-  const { bootstrap, state, addProduct, commerceEnabled, updateQuantity, removeLine } = useCommerce();
-  const [pendingProductId, setPendingProductId] = useState<string | null>(null);
-  const [viewProductId, setViewProductId] = useState<string | null>(null);
+  const { bootstrap, locations, state, addProduct, setFulfilment, clearFulfilment } = useCommerce();
+  const [contextOpen, setContextOpen] = useState(false);
+  const [orderType, setOrderType] = useState<DemoOrderType | "">("");
+  const [locationId, setLocationId] = useState("");
+  const [zoneId, setZoneId] = useState("");
+  const [deliveryMethod, setDeliveryMethod] = useState<"area" | "pin">("area");
+  const [address, setAddress] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("ASAP");
+  const [scheduleDay, setScheduleDay] = useState<ScheduleDay>("today");
   const [error, setError] = useState<string | null>(null);
-  const money = new Intl.NumberFormat("en-CA", { style: "currency", currency: bootstrap.currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const add = async (productId: string) => {
+  const [modifierPrompt, setModifierPrompt] = useState<string | null>(null);
+  const [modifierReady, setModifierReady] = useState<Record<string, boolean>>({});
+  const [pendingProduct, setPendingProduct] = useState<string | null>(null);
+  const [contextPending, setContextPending] = useState(false);
+  const money = new Intl.NumberFormat("en-CA", { style: "currency", currency: bootstrap.currency });
+  const selectedLocation = locations.find((location) => location.id === locationId) ?? locations[0];
+  const zones = useMemo(() => selectedLocation?.deliveryZones ?? [], [selectedLocation]);
+  const todaySlots = useMemo(() => {
+    if (!selectedLocation || !orderType) return [];
+    return getStorefrontScheduledSlots(selectedLocation, orderType, new Date());
+  }, [orderType, selectedLocation]);
+  const tomorrowSlots = useMemo(() => {
+    if (!selectedLocation || !orderType) return [];
+    const target = new Date();
+    target.setDate(target.getDate() + 1);
+    return getStorefrontScheduledSlots(selectedLocation, orderType, target);
+  }, [orderType, selectedLocation]);
+  const slots = scheduleDay === "tomorrow" ? tomorrowSlots : todaySlots;
+  const hasAnySlots = todaySlots.length > 0 || tomorrowSlots.length > 0;
+
+  useEffect(() => { if (!locationId && locations[0]?.id) setLocationId(locations[0].id); }, [locationId, locations]);
+  useEffect(() => {
+    if (contextOpen || !state.fulfilment) return;
+    setOrderType((state.fulfilment.orderType as DemoOrderType | undefined) ?? "");
+    setLocationId(state.fulfilment.locationId ?? "");
+    setZoneId(state.fulfilment.deliveryZoneId ?? "");
+    setScheduledAt(state.fulfilment.scheduledAt ?? "");
+  }, [contextOpen, state.fulfilment]);
+  useEffect(() => {
+    if (orderType === "DELIVERY") {
+      if (zones.length && !zoneId) setZoneId(zones[0].id);
+      if (!zones.length) setDeliveryMethod("pin");
+    } else setZoneId("");
+  }, [address, deliveryMethod, latitude, longitude, orderType, zoneId, zones]);
+  useEffect(() => {
+    if (scheduledAt !== "ASAP" && !slots.some((slot) => slot.value === scheduledAt)) {
+      setScheduledAt(slots[0]?.value ?? "ASAP");
+    }
+  }, [scheduledAt, slots]);
+  const add = async (product: DemoProduct) => {
+    if (pendingProduct || contextPending) return;
     setError(null);
-    if (!state?.fulfilment) { setPendingProductId(productId); return; }
-    try { await addProduct(productId); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to add item."); }
+    setPendingProduct(product.id);
+    try { await addProduct(product.id, Boolean(modifierReady[product.id])); setModifierPrompt(null); }
+    catch (cause) { const text = messageOf(cause); setError(text); if (/fulfilment|location|address|pickup|delivery|schedule|context/i.test(text)) setContextOpen(true); if (product.hasModifiers && /modifier|option|required/i.test(text)) setModifierPrompt(product.id); }
+    finally { setPendingProduct(null); }
   };
-  const changeQuantity = async (line: CartLine, nextQuantity: number) => {
-    setError(null);
-    try { if (nextQuantity < 1) await removeLine(line.id); else await updateQuantity(line, nextQuantity); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update the cart."); }
+  const chooseOrderType = (next: DemoOrderType) => { setOrderType(next); setError(null); if (next === "PICKUP") { setAddress(""); setLatitude(""); setLongitude(""); setZoneId(""); } };
+  const saveContext = async () => {
+    if (contextPending) return;
+    setError(null); setContextPending(true);
+    const deliveryAddress = orderType === "DELIVERY" && deliveryMethod === "pin" ? { label: address || "Pinned address", addressLine1: address || "Pinned address", latitude: Number(latitude), longitude: Number(longitude) } : undefined;
+    try {
+      await setFulfilment({ orderType: orderType || undefined, locationId: locationId || undefined, deliveryZoneId: orderType === "DELIVERY" && deliveryMethod === "area" ? zoneId || undefined : undefined, scheduledAt: scheduledAt || undefined, scheduleSlots: slots, deliveryAddress });
+      setContextOpen(false);
+    } catch (cause) { setError(messageOf(cause)); }
+    finally { setContextPending(false); }
   };
-  const heroProducts = bootstrap.products.slice(0, 3);
-  const viewProduct = bootstrap.products.find((product) => product.id === viewProductId) ?? null;
+  const resetContext = () => { clearFulfilment(); setOrderType(""); setLocationId(""); setZoneId(""); setAddress(""); setLatitude(""); setLongitude(""); setScheduledAt(""); setScheduleDay("today"); setContextOpen(true); };
 
   return <>
-    <section className="hero"><div className="hero-copy"><p className="eyebrow">{bootstrap.businessName} · online grocery</p><h1>Everyday groceries,<br /><em>ready when you are.</em></h1><p>Fresh pantry staples, produce, and household favourites—picked for a simple weekly shop.</p><div className="hero-actions"><a className="button button-primary" href="#products">Shop the menu <span>↗</span></a><span className="hero-note">{commerceEnabled ? "Ordering is open" : "Ordering is paused"}</span></div><div className="hero-trust"><span>✓ Secure checkout</span><span>✓ Pickup or delivery</span></div></div><div className="hero-art" aria-hidden="true"><div className="hero-orbit hero-orbit-one" /><div className="hero-orbit hero-orbit-two" />{heroProducts.map((product, index) => <figure className={`hero-product hero-product-${index + 1}`} key={product.id}>{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <span>{product.name.slice(0, 1)}</span>}</figure>)}<div className="hero-stamp"><strong>Food Papa</strong><span>Made for today</span></div></div></section>
-    <section id="products" className="products-section"><div className="section-heading"><div><p className="eyebrow">{bootstrap.businessName} menu</p><h2>Shop the essentials</h2><p>Everything you need for the week, without the aisle-hopping.</p></div><div className={`availability ${commerceEnabled ? "open" : "closed"}`}><i />{commerceEnabled ? "Ordering enabled" : "Ordering disabled"}</div></div>
-      {error && <p className="notice error">{error}</p>}
-      <div className="product-grid">{bootstrap.products.length ? bootstrap.products.map((product) => { const line = state?.cart?.items.find((item) => item.productId === product.id); return <article className="product-card" key={product.id}>
-        <div className="product-image">{product.imageUrl ? <img src={product.imageUrl} alt={product.name} /> : <span>Food Papa</span>}{product.hasModifiers ? <small>Customise</small> : null}</div>
-        <div className="product-copy"><h3>{product.name}</h3><p>{product.description || "A reliable pick for your next shop."}</p></div>
-        <div className="product-bottom"><strong>{money.format(product.price)}</strong>{!commerceEnabled ? <button className="add-button view-button" onClick={() => setViewProductId(product.id)}>View</button> : line ? <div className="product-quantity" aria-label={`${product.name} quantity`}><button aria-label={`Decrease ${product.name}`} onClick={() => void changeQuantity(line, line.quantity - 1)}>−</button><span>{line.quantity}</span><button aria-label={`Increase ${product.name}`} onClick={() => void changeQuantity(line, line.quantity + 1)}>+</button></div> : <button className="add-button" onClick={() => void add(product.id)}><b>+</b>{product.hasModifiers ? "Options" : "Add"}</button>}</div>
-      </article>; }) : <p className="empty">No products were returned by the storefront.</p>}</div>
-    </section>
-    {pendingProductId && <FulfilmentDialog onClose={() => setPendingProductId(null)} onComplete={async () => { const productId = pendingProductId; setPendingProductId(null); if (productId) await add(productId); }} />}
-    {viewProduct && <ProductDetailDialog product={viewProduct} money={money} onClose={() => setViewProductId(null)} />}
+    <section className="hero"><div className="hero-copy"><p className="eyebrow">{bootstrap.businessName} · ordering lab</p><h1>Build the order.<br /><em>Keep the flow yours.</em></h1><p>Choose pickup or delivery, set the handoff details, and let the Order SDK carry the same context through cart and checkout.</p><div className="hero-actions"><a className="button button-primary" href="#products">Browse products <span>↗</span></a><span className="hero-note">SDK-owned ordering</span></div><div className="journey-steps" aria-label="Ordering journey"><span className="active"><b>01</b> Context</span><i>→</i><span><b>02</b> Cart</span><i>→</i><span><b>03</b> Checkout</span></div></div><div className="hero-art" aria-hidden="true"><div className="hero-orbit hero-orbit-one" /><div className="hero-orbit hero-orbit-two" /><div className="hero-stamp"><strong>SDK</strong><span>Ordering runtime</span></div></div></section>
+    <section className="context-strip" aria-label="Order context summary"><div><span className="context-kicker">Current handoff</span><strong>{state.fulfilment?.orderType ?? "Not selected"}</strong><small>{state.fulfilment && selectedLocation?.name ? `${selectedLocation.name} · ${state.fulfilment.scheduledAt === "ASAP" ? "ASAP" : "Scheduled"}` : "Choose a location to continue"}</small></div><button className="button button-secondary" onClick={() => setContextOpen((open) => !open)}>{contextOpen ? "Close context" : "Edit context"}</button></section>
+    <section className="products-section" id="products"><div className="section-heading"><div><p className="eyebrow">{bootstrap.businessName} menu</p><h2>Add an item</h2><p>All ordering actions use one Order SDK runtime; its validation response opens the required context or option prompt.</p></div><div className={`availability ${state.sdkStatus === "ready" ? "open" : ""}`}><i />SDK {state.sdkStatus}</div></div>{error ? <p className="notice error" role="alert"><strong>SDK response</strong><span>{error}</span></p> : null}<div className="product-grid">{bootstrap.products.map((product) => <ProductCard key={product.id} product={product} money={money} onAdd={() => void add(product)} pending={pendingProduct === product.id} disabled={Boolean(pendingProduct) || state.sdkStatus !== "ready"} modifierPrompt={modifierPrompt === product.id} modifierReady={Boolean(modifierReady[product.id])} onModifier={() => setModifierReady((current) => ({ ...current, [product.id]: !current[product.id] }))} />)}</div></section>
+    {contextOpen ? <div className="context-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setContextOpen(false); }}><section className="demo-controls context-panel context-modal" aria-label="Fulfilment selection" role="dialog" aria-modal="true"><div className="controls-heading"><div><p className="eyebrow">Step 01 · context</p><h2>Where should we send it?</h2></div><div className="context-actions"><button className="text-button" onClick={resetContext}>Reset selection</button><button className="modal-close" aria-label="Close context" onClick={() => setContextOpen(false)}>×</button></div></div><p className="context-explainer">The Order SDK owns this context and validates it before cart or checkout can proceed.</p><div className="choice-grid fulfilment-choices"><button className={orderType === "PICKUP" ? "selected" : ""} onClick={() => chooseOrderType("PICKUP")}><span className="choice-icon">↗</span><strong>Pickup</strong><small>Collect from the selected location</small></button><button className={orderType === "DELIVERY" ? "selected" : ""} onClick={() => chooseOrderType("DELIVERY")}><span className="choice-icon">⌖</span><strong>Delivery</strong><small>{zones.length ? "Select an area" : "Pin an exact address"}</small></button></div><div className="field"><span>Location <i>required</i></span><div className="location-list">{locations.map((location, index) => <button type="button" key={location.id || index} className={`location-choice ${location.id === locationId ? "selected" : ""}`} onClick={() => setLocationId(location.id)}><span className="location-radio" aria-hidden="true" /><span><strong>{location.name || "Location"}</strong><small>{[location.addressLine1, location.addressLine2, location.city, location.state].filter((value) => typeof value === "string" && value.trim()).join(", ") || "Branch address unavailable"}</small></span></button>)}</div></div>{orderType === "DELIVERY" ? <div className="delivery-method"><span className="field-label">Delivery method</span><div className="segmented"><button className={deliveryMethod === "area" ? "selected" : ""} disabled={!zones.length} onClick={() => setDeliveryMethod("area")}>Area / sub-region</button><button className={deliveryMethod === "pin" ? "selected" : ""} onClick={() => setDeliveryMethod("pin")}>Exact pin</button></div>{deliveryMethod === "area" && zones.length ? <label className="field"><span>Area <i>required</i></span><select value={zoneId} onChange={(event) => setZoneId(event.target.value)}><option value="">Choose an area</option>{zones.map((zone, index) => <option key={zone.id || index} value={zone.id}>{zone.name || "Delivery area"}</option>)}</select></label> : null}{deliveryMethod === "pin" ? <><label className="field"><span>Address <i>required</i></span><input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Apartment, street, landmark" /></label><div className="field-row"><label className="field"><span>Latitude <i>required</i></span><input value={latitude} onChange={(event) => setLatitude(event.target.value)} placeholder="e.g. 31.5204" inputMode="decimal" /></label><label className="field"><span>Longitude <i>required</i></span><input value={longitude} onChange={(event) => setLongitude(event.target.value)} placeholder="e.g. 31.5204" inputMode="decimal" /></label></div></> : null}</div> : null}<div className="schedule-box"><div><span className="field-label">Order time</span><small>The Order SDK validates the selected schedule.</small></div><div className="segmented"><button className={scheduledAt === "ASAP" ? "selected" : ""} disabled={!orderType} onClick={() => setScheduledAt("ASAP")}>ASAP</button><button className={scheduledAt !== "ASAP" && scheduledAt ? "selected" : ""} disabled={!orderType || !hasAnySlots} onClick={() => { const nextDay: ScheduleDay = scheduleDay === "today" && !todaySlots.length && tomorrowSlots.length ? "tomorrow" : scheduleDay; const nextSlots = nextDay === "tomorrow" ? tomorrowSlots : todaySlots; setScheduleDay(nextDay); setScheduledAt(nextSlots[0]?.value ?? "ASAP"); }}>Schedule</button></div>{scheduledAt !== "ASAP" && slots.length ? <><div className="schedule-days"><button className={scheduleDay === "today" ? "selected" : ""} disabled={!todaySlots.length} onClick={() => { setScheduleDay("today"); setScheduledAt(todaySlots[0]?.value ?? "ASAP"); }}>Today</button><button className={scheduleDay === "tomorrow" ? "selected" : ""} disabled={!tomorrowSlots.length} onClick={() => { setScheduleDay("tomorrow"); setScheduledAt(tomorrowSlots[0]?.value ?? "ASAP"); }}>Tomorrow</button></div><div className="slot-grid">{slots.map((slot) => <button key={slot.value} className={scheduledAt === slot.value ? "selected" : ""} onClick={() => setScheduledAt(slot.value)}>{slot.label}</button>)}</div></> : orderType ? <p className="muted">No scheduled slots are available for this service.</p> : null}</div><button className="button button-primary full" disabled={contextPending} onClick={() => void saveContext()}>{contextPending ? "Checking context…" : "Apply context to SDK"}</button><p className="context-requirements"><strong>SDK will check:</strong> fulfilment type · active location · area or geo-range · ASAP/schedule slot · modifier requirements.</p></section></div> : null}
   </>;
 }
 
-function ProductDetailDialog({ product, money, onClose }: { product: DemoProduct; money: Intl.NumberFormat; onClose(): void }) {
-  return <div className="modal-layer" role="presentation"><section className="modal product-detail-modal" role="dialog" aria-modal="true" aria-labelledby="product-detail-title"><button className="icon-button modal-close" onClick={onClose} aria-label="Close">×</button>{product.imageUrl ? <img src={product.imageUrl} alt={product.name} /> : null}<p className="eyebrow">Product details</p><h2 id="product-detail-title">{product.name}</h2><p>{product.description || "A reliable pick for your next shop."}</p><strong>{money.format(product.price)}</strong><button className="button button-primary full" onClick={onClose}>Close</button></section></div>;
-}
-
-function FulfilmentDialog({ onClose, onComplete }: { onClose(): void; onComplete(): Promise<void> }) {
-  const { state, setFulfilment } = useCommerce();
-  const [type, setType] = useState<OrderType>("PICKUP");
-  const [locationId, setLocationId] = useState("");
-  const [address, setAddress] = useState("");
-  const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
-  const [addressLoading, setAddressLoading] = useState(false);
-  const [delivery, setDelivery] = useState<DeliverySelection | null>(null);
-  const [scheduledAt, setScheduledAt] = useState<"ASAP" | string>("ASAP");
-  const [step, setStep] = useState<"type" | "location" | "schedule">("type");
-  const [error, setError] = useState<string | null>(null);
-  const locations = state?.bootstrap?.locations ?? [];
-  const selected = locations.find((location) => location.id === locationId);
-  const available = locations.filter((location) => location.active && location.acceptingOrders && location.supportedOrderTypes.includes(type));
-  const nextHalfHour = new Date(Date.now() + 30 * 60_000);
-  nextHalfHour.setMinutes(Math.ceil(nextHalfHour.getMinutes() / 30) * 30, 0, 0);
-
-  useEffect(() => {
-    if (type !== "DELIVERY" || address.trim().length < 3 || delivery?.label === address) { setAddressResults([]); return; }
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      setAddressLoading(true);
-      try {
-        const response = await fetch(`/api/geocode?q=${encodeURIComponent(address)}`, { signal: controller.signal });
-        const payload = await response.json() as { results?: GeocodeResult[] };
-        if (!controller.signal.aborted) setAddressResults(Array.isArray(payload.results) ? payload.results : []);
-      } catch (cause) {
-        if (!controller.signal.aborted) setAddressResults([]);
-      } finally {
-        if (!controller.signal.aborted) setAddressLoading(false);
-      }
-    }, 300);
-    return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [address, delivery?.label, type]);
-
-  const chooseAddress = (result: GeocodeResult) => {
-    const match = findEligibleDeliveryLocations({ latitude: result.latitude, longitude: result.longitude }, available)[0];
-    setAddressResults([]);
-    setAddress(result.label);
-    if (!match) {
-      setDelivery(null); setLocationId("");
-      setError("That address is outside the delivery areas of our available locations.");
-      return;
-    }
-    setError(null);
-    setDelivery({ ...result, locationId: match.location.id, zoneId: match.zone.id, locationName: match.location.name });
-    setLocationId(match.location.id);
-  };
-
-  const save = async () => {
-    if (!selected) { setError("Select a location first."); return; }
-    if (type === "DELIVERY" && !delivery) { setError("Choose an address in a listed delivery area."); return; }
-    const context: FulfilmentContext = { orderType: type, locationId: selected.id, scheduledAt, ...(type === "DELIVERY" && delivery ? { deliveryZoneId: delivery.zoneId, deliveryAddress: { label: delivery.label, addressLine1: delivery.label, latitude: delivery.latitude, longitude: delivery.longitude, city: delivery.city, state: delivery.state, country: delivery.country, postalCode: delivery.postalCode } } : {}) };
-    try { await setFulfilment(context); await onComplete(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to save fulfilment."); }
-  };
-
-  return <div className="modal-layer" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="fulfilment-title"><button className="icon-button modal-close" onClick={onClose}>×</button>
-    {step === "type" && <><p className="eyebrow">Before adding an item</p><h2 id="fulfilment-title">How would you like your order?</h2><div className="choice-grid"><button onClick={() => { setType("PICKUP"); setLocationId(""); setDelivery(null); setStep("location"); }}><strong>Pickup</strong><span>Collect from a nearby store</span></button><button onClick={() => { setType("DELIVERY"); setLocationId(""); setDelivery(null); setStep("location"); }}><strong>Delivery</strong><span>Find stores that serve your address</span></button></div></>}
-    {step === "location" && <><button className="back-link" onClick={() => setStep("type")}>← Back</button><p className="eyebrow">{type === "PICKUP" ? "Pickup location" : "Delivery address"}</p><h2 id="fulfilment-title">{type === "PICKUP" ? "Choose your store" : "Where should we deliver?"}</h2>{type === "DELIVERY" ? <><label className="field"><span>Delivery address</span><input value={address} onChange={(event) => { setAddress(event.target.value); setDelivery(null); setLocationId(""); setError(null); }} placeholder="Start typing your street address" autoComplete="street-address" /></label><div className="address-suggestions">{addressLoading ? <p className="address-status">Searching addresses…</p> : null}{addressResults.map((result) => <button type="button" key={`${result.latitude}:${result.longitude}:${result.label}`} className={delivery?.label === result.label ? "selected" : ""} onClick={() => chooseAddress(result)}><strong>{result.label}</strong><small>Use this address</small></button>)}{delivery ? <p className="address-status success">Nearest eligible location: <strong>{delivery.locationName}</strong></p> : null}</div></> : <div className="location-list">{available.map((location) => <label className={`location-choice ${location.id === locationId ? "selected" : ""}`} key={location.id}><input type="radio" checked={location.id === locationId} onChange={() => setLocationId(location.id)} /><span><strong>{location.name}</strong><small>{location.id}</small></span></label>)}</div>}{!available.length && <p className="notice error">No locations are available for this order type.</p>}{error && <p className="notice error">{error}</p>}<button className="button button-primary full" disabled={!locationId || (type === "DELIVERY" && !delivery)} onClick={() => setStep("schedule")}>Save location</button></>}
-    {step === "schedule" && <><button className="back-link" onClick={() => setStep("location")}>← Back</button><p className="eyebrow">{type === "PICKUP" ? "Pickup time" : "Delivery time"}</p><h2 id="fulfilment-title">When should we prepare it?</h2><label className={`time-choice ${scheduledAt === "ASAP" ? "selected" : ""}`}><input type="radio" checked={scheduledAt === "ASAP"} onChange={() => setScheduledAt("ASAP")} /><span><strong>As soon as possible</strong><small>Ready from the next 30-minute interval.</small></span></label><label className={`time-choice ${scheduledAt !== "ASAP" ? "selected" : ""}`}><input type="radio" checked={scheduledAt !== "ASAP"} onChange={() => setScheduledAt(nextHalfHour.toISOString())} /><span><strong>Schedule for later</strong><small>Choose a date and time.</small></span></label>{scheduledAt !== "ASAP" && <label className="field"><span>Date and time</span><input type="datetime-local" value={scheduledAt.slice(0, 16)} min={new Date().toISOString().slice(0, 16)} onChange={(event) => setScheduledAt(new Date(event.target.value).toISOString())} /></label>} {error && <p className="notice error">{error}</p>}<button className="button button-primary full" onClick={() => void save()}>Confirm {type === "PICKUP" ? "pickup" : "delivery"} time</button></>}
-  </section></div>;
+function ProductCard({ product, money, onAdd, pending, disabled, modifierPrompt, modifierReady, onModifier }: { product: DemoProduct; money: Intl.NumberFormat; onAdd(): void; pending: boolean; disabled: boolean; modifierPrompt: boolean; modifierReady: boolean; onModifier(): void }) {
+  return <article className="product-card"><div className="product-image">{product.imageUrl ? <img src={product.imageUrl} alt={product.name} /> : <span>{product.name.slice(0, 1)}</span>}{product.hasModifiers ? <small>Options required</small> : null}</div><div className="product-copy"><h3>{product.name}</h3><p>{product.description || "A reliable pick for your next order."}</p>{product.hasModifiers && (modifierPrompt || modifierReady) ? <label className="modifier-check"><input type="checkbox" checked={modifierReady} onChange={onModifier} /> Required option selected</label> : null}</div><div className="product-bottom"><strong>{money.format(product.price)}</strong><button className="add-button" disabled={disabled} onClick={onAdd}><b>+</b>{pending ? "Adding…" : "Add"}</button></div></article>;
 }

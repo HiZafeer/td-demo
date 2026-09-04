@@ -1,86 +1,125 @@
 "use client";
 
-import { createCheckoutSdk, type CheckoutInstance } from "@zafeer/checkout-sdk";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCommerce } from "@/components/commerce-provider";
 
+/** Mounts the canonical Nova checkout through Order SDK. The host owns only
+  * the target element and context; the SDK loads the configured Checkout MFE
+  * bundle and bridges its cart runtime into the MFE. */
 export function CheckoutMount() {
-  const { client, state, bootstrap } = useCommerce();
-  const currentCart = state?.cart;
-  const targetRef = useRef<HTMLDivElement>(null);
-  const instanceRef = useRef<CheckoutInstance | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [completedOrder, setCompletedOrder] = useState<string | null>(null);
+  const { state, bootstrap, order, recordSdk } = useCommerce();
+  const targetRef = useRef<HTMLElement>(null);
+  const [mountState, setMountState] = useState<"waiting" | "mounting" | "ready" | "error">("waiting");
+  const [mountError, setMountError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const fulfilment = state.fulfilment;
+  // The SDK emits a fresh context object after every accepted update. Keep
+  // mount dependencies value-based so the MFE's initial context sync cannot
+  // trigger an unmount/remount loop.
+  const fulfilmentSignature = JSON.stringify(fulfilment ?? null);
+  const cartSnapshot = useMemo(() => ({ items: state.cart.items.map((item) => {
+    const product = bootstrap.products.find((candidate) => candidate.id === item.productId || candidate.name === item.name);
+    return { id: item.id, productId: item.productId, name: item.name || product?.name || "Menu item", quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.lineTotal, imageUrl: item.imageUrl ?? product?.imageUrl, modifierLabels: item.modifiers };
+  }), subtotal: state.cart.total, total: state.cart.total, currency: bootstrap.currency }), [bootstrap.currency, bootstrap.products, state.cart.items, state.cart.total]);
+  const checkoutLocations = useMemo(() => bootstrap.locations.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const location = value as Record<string, unknown>;
+    const number = (candidate: unknown) => {
+      const parsed = typeof candidate === "number" ? candidate : Number(candidate);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    return [{
+      ...location,
+      latitude: number(location.latitude),
+      longitude: number(location.longitude),
+    }];
+  }), [bootstrap.locations]);
+  const checkoutSelection = useMemo(() => {
+    if (!fulfilment?.locationId || !fulfilment.orderType) return undefined;
+    const rawLocation = bootstrap.locations.find((value) => {
+      if (!value || typeof value !== "object") return false;
+      return String((value as Record<string, unknown>).id ?? "") === fulfilment.locationId;
+    }) as Record<string, unknown> | undefined;
+    const rawZones = Array.isArray(rawLocation?.deliveryZones) ? rawLocation.deliveryZones : [];
+    const rawZone = rawZones.find((value) => {
+      if (!value || typeof value !== "object") return false;
+      return String((value as Record<string, unknown>).id ?? "") === fulfilment.deliveryZoneId;
+    }) as Record<string, unknown> | undefined;
+    const text = (value: unknown) => typeof value === "string" ? value : "";
+    const number = (value: unknown) => {
+      const parsed = typeof value === "number" ? value : Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const locationAddress = [rawLocation?.addressLine1, rawLocation?.addressLine2, rawLocation?.city]
+      .map(text)
+      .filter(Boolean)
+      .join(", ");
+    const deliveryAddress = fulfilment.deliveryAddress;
+    return {
+      businessId: bootstrap.businessId,
+      city: text(rawLocation?.city),
+      currency: bootstrap.currency,
+      locationId: fulfilment.locationId,
+      locationSlug: text(rawLocation?.slug) || fulfilment.locationId,
+      locationName: text(rawLocation?.name) || "Store location",
+      locationAddress,
+      orderType: fulfilment.orderType,
+      addressLabel: text(deliveryAddress?.label) || text(deliveryAddress?.addressLine1),
+      latitude: deliveryAddress?.latitude ?? (number(rawLocation?.latitude) || null),
+      longitude: deliveryAddress?.longitude ?? (number(rawLocation?.longitude) || null),
+      selectedZoneId: fulfilment.deliveryZoneId ?? "",
+      selectedZoneName: text(rawZone?.name),
+      selectedZoneCharges: number(rawZone?.charges),
+      selectedZoneMinOrderAmount: number(rawZone?.minOrderAmount),
+      selectedZoneEstimatedDeliveryTime: text(rawZone?.estimatedDeliveryTime),
+      addressLine2: text(deliveryAddress?.addressLine2),
+      deliveryCity: text(deliveryAddress?.city),
+      deliveryState: text(deliveryAddress?.state),
+      deliveryCountry: text(deliveryAddress?.country),
+      deliveryPostalCode: text(deliveryAddress?.postalCode),
+      deliveryInstructions: "",
+      deliverySelectionConfirmed: true,
+    };
+  }, [bootstrap.businessId, bootstrap.currency, bootstrap.locations, fulfilmentSignature]);
 
   useEffect(() => {
-    if (!client || !targetRef.current || !currentCart?.items.length || !state?.fulfilment) return;
+    if (!order || !state.cart.id || !fulfilment?.locationId || !fulfilment.orderType || !fulfilment.scheduledAt) return;
+    const target = targetRef.current;
+    if (!target) return;
     let active = true;
-    void (async () => {
-      try {
-        await client.flush();
-        const checkoutContext = client.getCheckoutContext();
-        const hostUrl = window.location.origin;
-        const sdk = createCheckoutSdk({ mfeUrl: process.env.NEXT_PUBLIC_CHECKOUT_MFE_URL || "http://localhost:3001/embed/index.global.js" });
-        instanceRef.current = await sdk.mount(targetRef.current!, {
-          version: 1,
-          source: "third-party-demo",
-          businessId: checkoutContext.businessId,
-          cartReference: checkoutContext.cartId,
-          fulfilment: {
-            orderType: checkoutContext.fulfilment.orderType.toLowerCase() as "pickup" | "delivery" | "dine_in",
-            locationId: checkoutContext.fulfilment.locationId,
-            deliveryZoneId: checkoutContext.fulfilment.deliveryZoneId ?? undefined,
-            deliveryAddress: checkoutContext.fulfilment.deliveryAddress
-              ? {
-                label: checkoutContext.fulfilment.deliveryAddress.label,
-                formattedAddress: checkoutContext.fulfilment.deliveryAddress.addressLine1 ?? checkoutContext.fulfilment.deliveryAddress.label,
-                latitude: checkoutContext.fulfilment.deliveryAddress.latitude,
-                longitude: checkoutContext.fulfilment.deliveryAddress.longitude,
-              }
-              : undefined,
-            scheduleMode: checkoutContext.fulfilment.scheduledAt === "ASAP" ? "asap" : "scheduled",
-            scheduledAt: checkoutContext.fulfilment.scheduledAt === "ASAP" ? undefined : checkoutContext.fulfilment.scheduledAt,
-          },
-          apiBaseUrl: process.env.NEXT_PUBLIC_CHECKOUT_API_BASE_URL || "http://localhost:3001/api/checkout",
-          locale: "en-CA",
-          currency: checkoutContext.currency,
-          businessName: bootstrap.businessName,
-          logoUrl: bootstrap.logoUrl,
-          // This allows the separate MFE to paint immediately. It is only a
-          // snapshot: the MFE reloads `cartReference` before calculating or
-          // placing the order.
-          cartSnapshot: {
-            items: currentCart.items.map((item) => ({
-              id: item.id,
-              productId: item.productId,
-              name: item.name,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice.amount,
-              lineTotal: item.lineTotal.amount,
-              imageUrl: item.imageUrl,
-              modifierLabels: item.modifiers.map((modifier) => modifier.optionId),
-            })),
-            subtotal: currentCart.subtotal.amount,
-            total: currentCart.total.amount,
-            currency: currentCart.total.currency,
-          },
-          // The SDK receives an already-valid MFE configuration. It does not
-          // rewrite host navigation or otherwise alter the checkout base.
-          navigation: { continueShoppingUrl: `${hostUrl}/`, homeUrl: `${hostUrl}/` },
-          theme: { primaryColor: "#166534", buttonBackground: "#166534", buttonText: "#ffffff", pageBackground: "#fafaf8", surfaceColor: "#ffffff", textColor: "#172033", mutedTextColor: "#667085", borderColor: "#dde2e8", cardRadius: "16px", fieldRadius: "10px", buttonRadius: "999px" },
-        }, {
-          // The MFE has already cleared the authoritative remote cart. Keep this
-          // display snapshot alive until its confirmation screen is dismissed.
-          onOrderComplete(detail) { if (active) setCompletedOrder(detail.orderNumber ?? detail.orderId); },
-          onExit({ reason }) { if (reason === "back_to_shop") client.clearLocalAfterOrder(); },
-        });
-      } catch (cause) { if (active) setError(cause instanceof Error ? cause.message : "Checkout could not load."); }
-    })();
-    return () => { active = false; instanceRef.current?.unmount(); instanceRef.current = null; };
-  }, [bootstrap.businessName, bootstrap.logoUrl, client, currentCart, state?.fulfilment]);
+    setMountState("mounting"); setMountError(null); target.replaceChildren();
+    recordSdk("mountCheckout", "info", "Requesting Checkout MFE mount from the Order SDK");
+    const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim();
+    const config = {
+      source: "tossdown-demo-host",
+      businessName: bootstrap.businessName,
+      logoUrl: bootstrap.logoUrl,
+      cartSnapshot,
+      selection: checkoutSelection,
+      theme: { pageBackground: "#f7f4ff", pageText: "#172033", secondaryText: "#69748a", cardBackground: "#ffffff", borderColor: "#e5e1ef", buttonBackground: "#6546e8", buttonText: "#ffffff", borderRadius: "18px", cardRadius: "18px", fieldRadius: "11px", buttonRadius: "999px" },
+      maps: bootstrap.maps ?? { provider: "openstreetmap" as const },
+      ...(stripePublishableKey ? { payment: { stripePublishableKey } } : {}),
+      locations: checkoutLocations,
+      hostShell: true,
+      navigation: { continueShoppingUrl: "/#products", homeUrl: "/" },
+    };
+    let instance: { unmount(): void } | undefined;
+    void order.mountCheckout(target, config, {
+      onReady: () => { if (active) { setMountState("ready"); recordSdk("mountCheckout", "success", "Checkout MFE is ready"); } },
+      onError: (error) => { if (active) { setMountState("error"); setMountError(error.message); recordSdk("mountCheckout", "error", error.message); } },
+      onOrderComplete: (detail) => {
+        if (active) {
+          recordSdk("orderComplete", "success", `Order accepted by the SDK · order=${detail.orderNumber || detail.orderId}`);
+        }
+      },
+      onExit: (detail) => { if (active) { setMountState("waiting"); recordSdk("mountCheckout", "info", `Checkout MFE exited · reason=${detail.reason}`); } },
+    }).then((next) => { instance = next; if (active) setMountState("ready"); }).catch((cause: unknown) => { if (active) { const message = cause instanceof Error ? cause.message : "Checkout MFE could not be mounted."; setMountState("error"); setMountError(message); recordSdk("mountCheckout", "error", message); } });
+    return () => { active = false; instance?.unmount(); target.replaceChildren(); };
+  }, [bootstrap.businessId, bootstrap.businessName, bootstrap.currency, bootstrap.logoUrl, cartSnapshot, checkoutLocations, checkoutSelection, fulfilmentSignature, order, recordSdk, retry, state.cart.id]);
 
-  if (!state?.cart?.items.length) return <section className="empty-checkout"><h1>Your cart is empty</h1><p>Add menu items before continuing to checkout.</p><Link className="button button-primary" href="/">Back to menu</Link></section>;
-  if (!state.fulfilment) return <section className="empty-checkout"><h1>Fulfilment is required</h1><p>Return to the menu and select pickup or delivery before checkout.</p><Link className="button button-primary" href="/">Back to menu</Link></section>;
-  return <section className="checkout-shell"><div className="checkout-intro"><p className="eyebrow">Secure checkout</p><h1>Complete your order</h1><p>This content is mounted by <code>@zafeer/checkout-sdk</code>; the demo header and footer remain host-owned.</p></div>{completedOrder && <p className="notice success">Order confirmed: {completedOrder}. Local cart state has been cleared.</p>}{error ? <p className="notice error">{error}</p> : <div ref={targetRef} className="checkout-target" />}</section>;
+  if (!state.cart.items.length) return <section className="checkout-shell"><div className="checkout-intro"><p className="eyebrow">Step 03 · checkout handoff</p><h1>Your checkout starts with a cart.</h1><p>Add an item from the menu to mount the canonical Checkout MFE through the Order SDK.</p></div><div className="checkout-empty"><span className="checkout-icon">⌑</span><h2>Your bag is empty</h2><p>Nothing is sent to the MFE until the SDK has a cart and valid fulfilment.</p><Link className="button button-primary" href="/#products">Back to menu</Link></div></section>;
+  if (!fulfilment?.locationId || !fulfilment.orderType || !fulfilment.scheduledAt) return <section className="checkout-shell"><div className="checkout-intro"><p className="eyebrow">Step 03 · checkout handoff</p><h1>Choose fulfilment first.</h1><p>The Order SDK blocks checkout until location, fulfilment type, and timing are present.</p></div><div className="checkout-empty"><span className="checkout-icon">⌖</span><h2>Checkout is waiting for context</h2><p>Return to the menu and apply a pickup or delivery context.</p><Link className="button button-primary" href="/#products">Choose fulfilment</Link></div></section>;
+
+  return <section className="checkout-shell"><div className="checkout-intro checkout-intro-row"><div><p className="eyebrow">Step 03 · checkout handoff</p><h1>Canonical Checkout MFE</h1><p>Mounted by the Order SDK with Shadow DOM isolation. Cart state, fulfilment, validation, payment, and order placement stay inside the shared SDK runtime.</p></div><span className={`mfe-status ${mountState}`}><i />{mountState === "mounting" ? "Loading MFE" : mountState === "ready" ? "MFE ready" : mountState === "error" ? "Mount error" : "Waiting"}</span></div>{mountError ? <div className="mfe-error"><strong>Checkout mount failed</strong><span>{mountError}</span><button className="button button-secondary" onClick={() => setRetry((value) => value + 1)}>Retry mount</button></div> : null}<section ref={targetRef} id="checkout-mfe-root" className="checkout-target" aria-label="Checkout MFE" aria-busy={mountState === "mounting"} /></section>;
 }

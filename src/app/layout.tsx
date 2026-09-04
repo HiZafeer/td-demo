@@ -8,5 +8,5 @@ export const metadata: Metadata = { title: "Tossdown · Commerce Demo", descript
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const bootstrap = await loadDemoBootstrap();
-  return <html lang="en"><body><CommerceProvider bootstrap={bootstrap}><SiteShell>{children}</SiteShell></CommerceProvider></body></html>;
+  return <html lang="en"><body suppressHydrationWarning><CommerceProvider bootstrap={bootstrap}><SiteShell>{children}</SiteShell></CommerceProvider></body></html>;
 }

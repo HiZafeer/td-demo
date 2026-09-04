@@ -17,7 +17,7 @@ const number = (value: unknown) => {
 /** Server-side OSM proxy: no browser CORS dependency and no committed map key. */
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
-  if (query.length < 3) return NextResponse.json({ results: [] });
+  if (query.length < 3) return NextResponse.json({ success: true, data: [], results: [] });
 
   try {
     const bootstrap = await loadDemoBootstrap();
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       postalCode: entry.address?.postcode,
     }));
     const results = candidates.flatMap((entry) => entry.latitude === null || entry.longitude === null ? [] : [{ label: entry.label, latitude: entry.latitude, longitude: entry.longitude, ...(entry.city ? { city: entry.city } : {}), ...(entry.state ? { state: entry.state } : {}), ...(entry.country ? { country: entry.country } : {}), ...(entry.postalCode ? { postalCode: entry.postalCode } : {}) }]);
-    return NextResponse.json({ provider: "openstreetmap", results });
+    return NextResponse.json({ success: true, provider: "openstreetmap", data: results, results });
   } catch {
     return NextResponse.json({ message: "Address search is temporarily unavailable.", results: [] }, { status: 502 });
   }
