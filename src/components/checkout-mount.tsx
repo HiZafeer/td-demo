@@ -104,7 +104,7 @@ export function CheckoutMount() {
       ...(stripePublishableKey ? { payment: { stripePublishableKey } } : {}),
       locations: checkoutLocations,
       hostShell: true,
-      navigation: { continueShoppingUrl: "/#products", homeUrl: "/" },
+      navigation: { continueShoppingUrl: "/#products", homeUrl: "/", ordersUrl: "/profile?tab=orders" },
     };
     let instance: { unmount(): void } | undefined;
     void order.mountCheckout(target, config, {
