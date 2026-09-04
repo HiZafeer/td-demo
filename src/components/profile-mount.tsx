@@ -36,5 +36,9 @@ export function ProfileMount() {
   }, [bootstrap, order, recordSdk]);
 
   const profileMfeConfigured = Boolean(process.env.NEXT_PUBLIC_PROFILE_MFE_URL);
-  return <section className="profile-host-section"><div className="section-heading"><div><p className="eyebrow">Account MFE</p><h1>Profile & orders</h1></div><span className={`sdk-badge ${status}`}>{status === "ready" ? "Mounted" : status === "error" ? "Mount error" : "Loading"}</span></div>{error ? <p className="inline-error">{error}</p> : null}<section ref={targetRef} className="profile-mfe-root" aria-label="Profile MFE" />{status === "error" ? <p className="muted">{profileMfeConfigured ? "The Profile MFE could not be loaded. Check its configured URL and reload." : "Start the profile MFE on port 3002, then reload this page."}</p> : null}</section>;
+  return <>
+    {error ? <p className="inline-error">{error}</p> : null}
+    <section ref={targetRef} className="profile-mfe-root" aria-label="Profile MFE" />
+    {status === "error" ? <p className="muted">{profileMfeConfigured ? "The Profile MFE could not be loaded. Check its configured URL and reload." : "Start the profile MFE on port 3002, then reload this page."}</p> : null}
+  </>;
 }

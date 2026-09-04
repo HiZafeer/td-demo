@@ -83,7 +83,10 @@ function toLocation(value: unknown, fallbackBusinessId = ""): StorefrontLocation
   if (!id) return null;
   const types = Array.isArray(raw.supportedOrderTypes) ? raw.supportedOrderTypes : ["PICKUP", "DELIVERY"];
   const deliveryZones = (Array.isArray(raw.deliveryZones) ? raw.deliveryZones : []) as NonNullable<StorefrontLocation["deliveryZones"]>;
-  const deliverySettings = deliverySettingsValue(raw.deliverySettings) ?? (deliveryZones.length > 0 ? "geoRange" : null);
+  // This Demo exposes configured zones as area/sub-region delivery when the
+  // public payload omits the mode, so Checkout MFE must receive the explicit
+  // canonical value instead of entering geo-address search.
+  const deliverySettings = deliverySettingsValue(raw.deliverySettings) ?? (deliveryZones.length > 0 ? "area" : null);
   return { id, businessId: stringValue(raw.businessId) || fallbackBusinessId, name: stringValue(raw.name) || "Store location", slug: stringValue(raw.slug) || id, active: raw.active !== false, isActive: raw.isActive !== false, isOpen: raw.isOpen === null ? null : raw.isOpen !== false, acceptingOrders: raw.acceptingOrders !== false, supportedOrderTypes: types.filter((type): type is DemoOrderType => type === "PICKUP" || type === "DELIVERY" || type === "DINE_IN"), addressLine1: stringValue(raw.addressLine1) || stringValue(raw.address), addressLine2: stringValue(raw.addressLine2), city: stringValue(raw.city), state: stringValue(raw.state), country: stringValue(raw.country), postalCode: stringValue(raw.postalCode), currency: stringValue(raw.currency), deliverySettings, latitude: numberValue(raw.latitude) || undefined, longitude: numberValue(raw.longitude) || undefined, businessHours: raw.businessHours, deliveryZones };
 }
 function toDemoCart(cart: Cart | null): DemoCart {
