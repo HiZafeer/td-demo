@@ -16,9 +16,17 @@ export function CheckoutMount() {
   const [completedOrder, setCompletedOrder] = useState<{ orderId?: string; orderNumber?: string } | null>(null);
   const [retry, setRetry] = useState(0);
   const fulfilment = state.fulfilment;
+  // Address, schedule, and cart edits are handled by the mounted MFE through
+  // the shared SDK runtime. Only a real checkout-context change should cause
+  // a new MFE instance; remounting for every SDK state update reloads images
+  // and discards the MFE's in-progress form state.
+  const checkoutMountKey = [
+    state.cart.id,
+    fulfilment?.locationId ?? "",
+    fulfilment?.orderType ?? "",
+  ].join("|");
   // The SDK emits a fresh context object after every accepted update. Keep
-  // mount dependencies value-based so the MFE's initial context sync cannot
-  // trigger an unmount/remount loop.
+  // this value-based only for deriving the initial config, not for lifecycle.
   const fulfilmentSignature = JSON.stringify(fulfilment ?? null);
   const cartSnapshot = useMemo(() => ({ items: state.cart.items.map((item) => {
     const product = bootstrap.products.find((candidate) => candidate.id === item.productId || candidate.name === item.name);
@@ -113,7 +121,7 @@ export function CheckoutMount() {
       onExit: (detail) => { if (active) { setMountState("waiting"); recordSdk("mountCheckout", "info", `Checkout MFE exited · reason=${detail.reason}`); } },
     }).then((next) => { instance = next; if (active) setMountState("ready"); }).catch((cause: unknown) => { if (active) { const message = cause instanceof Error ? cause.message : "Checkout MFE could not be mounted."; setMountState("error"); setMountError(message); recordSdk("mountCheckout", "error", message); } });
     return () => { active = false; instance?.unmount(); target.replaceChildren(); };
-  }, [bootstrap.businessId, bootstrap.businessName, bootstrap.currency, bootstrap.logoUrl, cartSnapshot, checkoutLocations, checkoutSelection, fulfilmentSignature, order, recordSdk, retry, state.cart.id]);
+  }, [checkoutMountKey, order, recordSdk, retry]);
 
   if (!state.cart.items.length) return <section className="checkout-empty"><span className="checkout-icon">⌑</span><h2>Your bag is empty</h2><p>Nothing is sent to the MFE until the SDK has a cart and valid fulfilment.</p><Link className="button button-primary" href="/#products">Back to menu</Link></section>;
   if (!fulfilment?.locationId || !fulfilment.orderType || !fulfilment.scheduledAt) return <section className="checkout-empty"><span className="checkout-icon">⌖</span><h2>Checkout is waiting for context</h2><p>Return to the menu and apply a pickup or delivery context.</p><Link className="button button-primary" href="/#products">Choose fulfilment</Link></section>;
