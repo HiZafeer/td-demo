@@ -9,7 +9,7 @@ import { OrderSuccessModal } from "@/components/order-success-modal";
   * the target element and context; the SDK loads the configured Checkout MFE
   * bundle and bridges its cart runtime into the MFE. */
 export function CheckoutMount() {
-  const { state, bootstrap, order, recordSdk } = useCommerce();
+  const { state, bootstrap, locations, order, recordSdk } = useCommerce();
   const targetRef = useRef<HTMLElement>(null);
   const [mountState, setMountState] = useState<"waiting" | "mounting" | "ready" | "error">("waiting");
   const [mountError, setMountError] = useState<string | null>(null);
@@ -24,30 +24,24 @@ export function CheckoutMount() {
     const product = bootstrap.products.find((candidate) => candidate.id === item.productId || candidate.name === item.name);
     return { id: item.id, productId: item.productId, name: item.name || product?.name || "Menu item", quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.lineTotal, imageUrl: item.imageUrl ?? product?.imageUrl, modifierLabels: item.modifiers };
   }), subtotal: state.cart.total, total: state.cart.total, currency: bootstrap.currency }), [bootstrap.currency, bootstrap.products, state.cart.items, state.cart.total]);
-  const checkoutLocations = useMemo(() => bootstrap.locations.flatMap((value) => {
-    if (!value || typeof value !== "object") return [];
-    const location = value as Record<string, unknown>;
+  const checkoutLocations = useMemo(() => locations.map((location) => {
     const number = (candidate: unknown) => {
       const parsed = typeof candidate === "number" ? candidate : Number(candidate);
       return Number.isFinite(parsed) ? parsed : undefined;
     };
-    return [{
+    return {
       ...location,
       latitude: number(location.latitude),
       longitude: number(location.longitude),
-    }];
-  }), [bootstrap.locations]);
+    };
+  }), [locations]);
   const checkoutSelection = useMemo(() => {
     if (!fulfilment?.locationId || !fulfilment.orderType) return undefined;
-    const rawLocation = bootstrap.locations.find((value) => {
-      if (!value || typeof value !== "object") return false;
-      return String((value as Record<string, unknown>).id ?? "") === fulfilment.locationId;
-    }) as Record<string, unknown> | undefined;
-    const rawZones = Array.isArray(rawLocation?.deliveryZones) ? rawLocation.deliveryZones : [];
+    const rawLocation = locations.find((location) => location.id === fulfilment.locationId);
+    const rawZones = rawLocation?.deliveryZones ?? [];
     const rawZone = rawZones.find((value) => {
-      if (!value || typeof value !== "object") return false;
-      return String((value as Record<string, unknown>).id ?? "") === fulfilment.deliveryZoneId;
-    }) as Record<string, unknown> | undefined;
+      return value.id === fulfilment.deliveryZoneId;
+    });
     const text = (value: unknown) => typeof value === "string" ? value : "";
     const number = (value: unknown) => {
       const parsed = typeof value === "number" ? value : Number(value);
@@ -83,7 +77,7 @@ export function CheckoutMount() {
       deliveryInstructions: "",
       deliverySelectionConfirmed: true,
     };
-  }, [bootstrap.businessId, bootstrap.currency, bootstrap.locations, fulfilmentSignature]);
+  }, [bootstrap.businessId, bootstrap.currency, fulfilmentSignature, locations]);
 
   useEffect(() => {
     if (!order || !state.cart.id || !fulfilment?.locationId || !fulfilment.orderType || !fulfilment.scheduledAt) return;

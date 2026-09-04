@@ -51,6 +51,12 @@ const CommerceContext = createContext<CommerceContextValue | null>(null);
 
 function numberValue(value: unknown): number { const number = typeof value === "number" ? value : Number(value); return Number.isFinite(number) ? number : 0; }
 function stringValue(value: unknown): string { return typeof value === "string" ? value : ""; }
+function deliverySettingsValue(value: unknown): StorefrontLocation["deliverySettings"] {
+  const normalized = stringValue(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "area") return "area";
+  if (["geo_range", "geo", "georange", "radius"].includes(normalized)) return "geoRange";
+  return null;
+}
 function errorDetail(error: unknown): string {
   if (error instanceof TossdownCartError) {
     // Activity is an operational summary, not a payload inspector. Keep SDK
@@ -70,13 +76,15 @@ function responseReference(value: unknown): string {
   return "Order response received";
 }
 function elapsed(startedAt: number): string { return `${Math.round((typeof performance === "undefined" ? Date.now() : performance.now()) - startedAt)}ms`; }
-function toLocation(value: unknown): StorefrontLocation | null {
+function toLocation(value: unknown, fallbackBusinessId = ""): StorefrontLocation | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
   const id = stringValue(raw.id);
   if (!id) return null;
   const types = Array.isArray(raw.supportedOrderTypes) ? raw.supportedOrderTypes : ["PICKUP", "DELIVERY"];
-  return { id, businessId: stringValue(raw.businessId), name: stringValue(raw.name) || "Store location", slug: stringValue(raw.slug) || id, active: raw.active !== false, isActive: raw.isActive !== false, isOpen: raw.isOpen === null ? null : raw.isOpen !== false, acceptingOrders: raw.acceptingOrders !== false, supportedOrderTypes: types.filter((type): type is DemoOrderType => type === "PICKUP" || type === "DELIVERY" || type === "DINE_IN"), addressLine1: stringValue(raw.addressLine1) || stringValue(raw.address), addressLine2: stringValue(raw.addressLine2), city: stringValue(raw.city), state: stringValue(raw.state), country: stringValue(raw.country), postalCode: stringValue(raw.postalCode), currency: stringValue(raw.currency), deliverySettings: raw.deliverySettings === "area" || raw.deliverySettings === "geoRange" ? raw.deliverySettings : null, latitude: numberValue(raw.latitude) || undefined, longitude: numberValue(raw.longitude) || undefined, businessHours: raw.businessHours, deliveryZones: Array.isArray(raw.deliveryZones) ? raw.deliveryZones as StorefrontLocation["deliveryZones"] : undefined };
+  const deliveryZones = (Array.isArray(raw.deliveryZones) ? raw.deliveryZones : []) as NonNullable<StorefrontLocation["deliveryZones"]>;
+  const deliverySettings = deliverySettingsValue(raw.deliverySettings) ?? (deliveryZones.length > 0 ? "geoRange" : null);
+  return { id, businessId: stringValue(raw.businessId) || fallbackBusinessId, name: stringValue(raw.name) || "Store location", slug: stringValue(raw.slug) || id, active: raw.active !== false, isActive: raw.isActive !== false, isOpen: raw.isOpen === null ? null : raw.isOpen !== false, acceptingOrders: raw.acceptingOrders !== false, supportedOrderTypes: types.filter((type): type is DemoOrderType => type === "PICKUP" || type === "DELIVERY" || type === "DINE_IN"), addressLine1: stringValue(raw.addressLine1) || stringValue(raw.address), addressLine2: stringValue(raw.addressLine2), city: stringValue(raw.city), state: stringValue(raw.state), country: stringValue(raw.country), postalCode: stringValue(raw.postalCode), currency: stringValue(raw.currency), deliverySettings, latitude: numberValue(raw.latitude) || undefined, longitude: numberValue(raw.longitude) || undefined, businessHours: raw.businessHours, deliveryZones };
 }
 function toDemoCart(cart: Cart | null): DemoCart {
   if (!cart) return { id: "", items: [], total: 0 };
@@ -127,7 +135,7 @@ export function CommerceProvider({ bootstrap, children }: { bootstrap: DemoBoots
   const [sdkStatus, setSdkStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const sdkRef = useRef<OrderSDK | null>(null);
-  const availableLocations = useMemo(() => bootstrap.locations.map(toLocation).filter((location): location is StorefrontLocation => Boolean(location)), [bootstrap.locations]);
+  const availableLocations = useMemo(() => bootstrap.locations.map((value) => toLocation(value, bootstrap.businessId)).filter((location): location is StorefrontLocation => Boolean(location)), [bootstrap.businessId, bootstrap.locations]);
   const logId = useRef(0);
   const log = useCallback((action: string, status: ActivityLog["status"], detail: string) => {
     setLogs((current) => [...current.slice(-99), { id: logId.current++, time: new Date().toLocaleTimeString(), source: "sdk", action, status, detail }]);
